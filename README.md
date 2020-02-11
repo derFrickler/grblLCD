@@ -9,3 +9,5 @@ Tested with GRBL_ESP32.
 The display coneccts to the RX/TX line of the grbl controller. As such it can not be used together with the USB connection.
 Might work together with USB when just connecting the TX line of grbl to the RX of the Display. 
 
+
+![header image](https://raw.githubusercontent.com/derFrickler/grblLCD/master/grblLCD.jpg)
