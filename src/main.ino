@@ -1,23 +1,3 @@
-/*****************************************************************************
-
-     Copyright (c) 2020 Johannes Hermen www.der-frickler.net
-
-     This library is free software; you can redistribute it and/or modify it
-     under the terms of the GNU Lesser General Public License as published
-     by the Free Software Foundation; either version 2 of the License, or
-     (at your option) any later version.
-
-     This software is distributed in the hope that it will be useful, but
-     WITHOUT ANY WARRANTY; without even the implied warranty of
-     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-     Lesser General Public License for more details.
-
-     You should have received a copy of the GNU Lesser General Public
-     License along with this library; if not, write to the Free Software
-     Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
-
-
-  *****************************************************************************/
 #include <Adafruit_GFX.h>    // Core graphics library
 #include <Adafruit_ST7735.h> // Hardware-specific library
 #include <SPI.h>
@@ -32,9 +12,9 @@
 
 Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS,  TFT_DC, TFT_RST);
 
-SoftwareSerial swSer(D1, D2); // RX, TX
+SoftwareSerial dbgSerial(D1, D2); // RX, TX
 
-#define WIDTH 240
+#define WIDTH 128
 #define ROWHEIGHT 25
 
 void setup(void) {
@@ -45,23 +25,25 @@ void setup(void) {
   WiFi.forceSleepBegin();
 
   Serial.begin(115200);
-  Serial.println("GRBL LCD DRO starting");
-  swSer.begin(115200);
-  //swSer.setTimeout(2000);
+  //Serial.setTimeout(2000);
+  dbgSerial.begin(115200);
+  dbgSerial.println("GRBL LCD DRO starting");
 
   tft.initR(INITR_144GREENTAB);
   tft.setTextWrap(false); // Allow text to run off right edge
   tft.fillScreen(ST7735_BLACK);
   tft.setRotation(0);
+
+  delay(5000);
 }
 
 
 void loop(void) {
 
-  swSer.write("?");
-  swSer.readStringUntil('<');
-  String status = swSer.readStringUntil('|');
-  Serial.println(status);
+  Serial.write("?"); // Status Report Query
+  Serial.readStringUntil('<');
+  String status = Serial.readStringUntil('|');
+  dbgSerial.println(status);
 
   handleButtons(status);
 
@@ -69,12 +51,12 @@ void loop(void) {
     tft.setTextColor(ST7735_RED, ST7735_BLACK);
     tft.setTextSize(1);
     tft.setCursor(3, 2);
-    tft.print("NO DATA");
+    tft.print("TEST");
     return;
   }
 
-  String mPos = swSer.readStringUntil('|');
-  Serial.println(mPos);
+  String mPos = Serial.readStringUntil('|');
+  dbgSerial.println(mPos);
   int i1 = mPos.indexOf(':');
   int i2 = mPos.indexOf(',', i1+1);
   int i3 = mPos.indexOf(',', i2+1);
@@ -86,9 +68,9 @@ void loop(void) {
 
   handleButtons(status);
 
-  String line = swSer.readString();
-  Serial.println("------------------------------");
-  Serial.println(line);
+  String line = Serial.readString();
+  dbgSerial.println("------------------------------");
+  dbgSerial.println(line);
 
   handleButtons(status);
 
@@ -99,22 +81,28 @@ void loop(void) {
   i1 = line.indexOf("FS:");
   if (i1 >= 0) {
     i2 = line.indexOf('|', i1+1);
+    if (i2 == -1) 
+      i2 = line.indexOf('>', i1+1);
     FS = line.substring(i1+3, i2);
-    Serial.print("FS "); Serial.println(FS);
+    dbgSerial.print("FS "); dbgSerial.println(FS);
   }
 
   i1 = line.indexOf("Pn:");
   if (i1 >= 0) {
     i2 = line.indexOf('|', i1+1);
+    if (i2 == -1) 
+      i2 = line.indexOf('>', i1+1);
     Pn = line.substring(i1+3, i2);
-    Serial.print("Pn "); Serial.println(Pn);
+    dbgSerial.print("Pn "); dbgSerial.println(Pn);
   }
 
   i1 = line.indexOf("SD:");
   if (i1 >= 0) {
     i2 = line.indexOf('|', i1+1);
+    if (i2 == -1) 
+      i2 = line.indexOf('>', i1+1);
     SD = line.substring(i1+3, i2);
-    Serial.print("SD "); Serial.println(SD);
+    dbgSerial.print("SD "); dbgSerial.println(SD);
   }
 
   int tColor = ST7735_WHITE;
@@ -169,10 +157,24 @@ void loop(void) {
   tft.setTextSize(1);
   tft.setCursor(3, y);
   tft.setTextColor(tColor, ST7735_BLACK);
-  if (status != "Idle" ) {
+  if (status != "Idle" && SD != "") {
     tft.print("FILE:");tft.print(SD);
   } else {
-    tft.print(" HOME          START");
+    if (status == "Idle" || status == "Alarm" ) {
+      tft.print(" HOME   ");
+    } else if (status == "Run" || status == "Jog") {
+      tft.print(" HOLD   ");
+    } else  {
+      tft.print("RESET   ");
+    }
+
+    if (status == "Idle") {
+      tft.print("   RUN: 1.nc");
+    } else  {
+      tft.print("       START");
+    }
+
+    
   }
 
   //delay(5000);
@@ -180,22 +182,26 @@ void loop(void) {
 
 void handleButtons(String status) {
   if(digitalRead(D0)) {
-    Serial.println("Button: RED");
-    if (status == "Idle" ) {
-      swSer.write("$H");
+    dbgSerial.println("Button: RED");
+    if (status == "Idle" || status == "Alarm" ) {
+      Serial.println("$H");  // HOME MACHINE
     } else if (status == "Run" || status == "Jog") {
-      swSer.write("!");
+      Serial.print("!"); // Feed Hold
     } else  {
-      swSer.write("0x18");
+      Serial.write('0x18'); // Soft RESET
     }
+    tft.fillRect(0, 118, WIDTH/2, 20, ST7735_RED);
+    delay(2000);
   }
   if(digitalRead(D8)) {
-    Serial.println("Button: WHITE");
+    dbgSerial.println("Button: WHITE");
     if (status == "Idle") {
-      swSer.write("[ESP220]/1.nc\r");
+      Serial.println("[ESP220]/1.nc\r"); // Run File 1.nc
     } else  {
-      swSer.write("~");
+      Serial.print("~"); // Cycle Start / Resume
     }
+    tft.fillRect(WIDTH/2, 118, WIDTH, 20, ST7735_WHITE);
+    delay(2000);
   }
 }
 
